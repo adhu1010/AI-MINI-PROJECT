@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Path Finding Visualization</title>
+    <title>Path Finding Visualization with A*</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -42,13 +42,31 @@
         const rows = 10; // 10x10 grid
         const cols = 10;
 
-        let staticObstacles = [{x: 3, y: 2}, {x: 4, y: 2}, {x: 5, y: 2}];
-        let dynamicObstacles = [{x: 1, y: 5}, {x: 2, y: 6}];
+        let staticObstacles = [
+            {x: 1, y: 0}, {x: 2, y: 0}, {x: 3, y: 0}, {x: 4, y: 0}, {x: 5, y: 0},
+            {x: 6, y: 0}, {x: 7, y: 0}, {x: 8, y: 0}, {x: 9, y: 0},
+            {x: 4, y: 1},
+            {x: 0, y: 2}, {x: 1, y: 2}, {x: 2, y: 2}, {x: 4, y: 2}, {x: 6, y: 2}, {x: 7, y: 2}, {x: 8, y: 2},
+            {x: 0, y: 3}, {x: 2, y: 3}, {x: 8, y: 3},
+            {x: 0, y: 4}, {x: 1, y: 4}, {x: 5, y: 4}, {x: 7, y: 4},
+            {x: 0, y: 5}, {x: 1, y: 5}, {x: 3, y: 5}, {x: 9, y: 5},
+            {x: 0, y: 6}, {x: 3, y: 6}, {x: 5, y: 6}, {x: 6, y: 6},
+            {x: 0, y: 7}, {x: 2, y: 7}, {x: 3, y: 7}, {x: 5, y: 7}, {x: 6, y: 7}, {x: 7, y: 7}, {x: 8, y: 7},
+            {x: 0, y: 8},
+            {x: 0, y: 9}, {x: 1, y: 9}, {x: 2, y: 9}, {x: 3, y: 9}, {x: 4, y: 9}, {x: 5, y: 9}, {x: 6, y: 9}, {x: 7, y: 9}
+        ];
+
+
+        let dynamicObstacles = [
+            {x: 5, y: 5}, {x: 2, y: 6}, {x: 3, y: 8}
+        ];
+
         const start = {x: 0, y: 0};
-        const goal = {x: 9, y: 9}; // Adjusted goal for a 10x10 grid
+        const goal = {x: 9, y: 9}; // Goal remains at (9,9)
         let path = [];
         let current_position = {x: 0, y: 0};
         let interval;
+        let obstacleMoveIntervals = {};
 
         // Draw the grid
         function drawGrid() {
@@ -110,9 +128,7 @@
                 let new_position;
                 let valid_position_found = false;
 
-                // Try to move the obstacle to a valid, unoccupied position
                 while (!valid_position_found) {
-                    // Generate a random direction: up, down, left, right
                     const direction = Math.floor(Math.random() * 4);
                     let delta = [0, 0];
 
@@ -121,16 +137,16 @@
                     if (direction === 2) delta = [0, -1];  // Move left
                     if (direction === 3) delta = [0, 1];   // Move right
 
-                    // Calculate the new position
                     new_position = {x: obstacle.x + delta[0], y: obstacle.y + delta[1]};
 
-                    // Check if the new position is within grid bounds
                     if (
                         new_position.x >= 0 && new_position.x < cols &&
                         new_position.y >= 0 && new_position.y < rows &&
-                        !static_obstacles.some(ob => ob.x === new_position.x && ob.y === new_position.y) &&  // Check static obstacles
-                        !newDynamicObstacles.some(ob => ob.x === new_position.x && ob.y === new_position.y) &&  // Check other dynamic obstacles
-                        (robotPosition.x !== new_position.x || robotPosition.y !== new_position.y)  // Check robot position
+                        !static_obstacles.some(ob => ob.x === new_position.x && ob.y === new_position.y) &&  
+                        !newDynamicObstacles.some(ob => ob.x === new_position.x && ob.y === new_position.y) &&
+                        (robotPosition.x !== new_position.x || robotPosition.y !== new_position.y) &&
+                        (new_position.x !== start.x || new_position.y !== start.y) &&  // Ensure dynamic obstacle avoids start
+                        (new_position.x !== goal.x || new_position.y !== goal.y)    // Ensure dynamic obstacle avoids goal
                     ) {
                         valid_position_found = true;
                     }
@@ -142,33 +158,43 @@
             return newDynamicObstacles;
         }
 
+        // Make dynamic obstacles wait for 3 seconds before changing their positions
+        function moveDynamicObstacles() {
+            dynamicObstacles.forEach((obstacle, index) => {
+                if (obstacleMoveIntervals[index]) {
+                    clearTimeout(obstacleMoveIntervals[index]); // Clear previous interval if any
+                }
+
+                obstacleMoveIntervals[index] = setTimeout(async () => {
+                    dynamicObstacles = await updateObstacles(staticObstacles, dynamicObstacles, current_position);
+                    drawGrid();
+                }, 800); // Wait for 3 seconds before moving
+            });
+        }
+
         // Main function for dynamic pathfinding
         function startPathfinding() {
             stopInterval();  // Stop any previous interval if active
 
-            path = getPath(current_position, goal, staticObstacles, dynamicObstacles); // Get the initial path
+            path = getPath(current_position, goal, staticObstacles, dynamicObstacles);
 
             interval = setInterval(async function() {
                 if (current_position.x === goal.x && current_position.y === goal.y) {
-                    clearInterval(interval); // Stop when the robot reaches the goal
+                    clearInterval(interval); 
                     alert("Goal reached!");
                     document.getElementById('startButton').disabled = false;
                     document.getElementById('restartButton').disabled = false;
                     return;
                 }
 
-                // Move dynamic obstacles, ensuring no overlap
-                dynamicObstacles = await updateObstacles(staticObstacles, dynamicObstacles, current_position);
+                moveDynamicObstacles(); // Move obstacles with a delay
 
-                // Check if the next step in the path is blocked by a dynamic obstacle
                 if (path.length > 0) {
-                    const next_step = path[0]; // Next step in the current path
+                    const next_step = path[0];
 
                     if (dynamicObstacles.some(obstacle => obstacle.x === next_step.x && obstacle.y === next_step.y)) {
-                        // If blocked, re-plan the path
                         path = await getPath(current_position, goal, staticObstacles, dynamicObstacles);
 
-                        // If no valid path, stop
                         if (!path || path.length === 0) {
                             clearInterval(interval);
                             alert("Path blocked, no valid path found!");
@@ -177,31 +203,33 @@
                             return;
                         }
                     } else {
-                        // If not blocked, move the robot to the next step
                         current_position = path.shift();
                     }
                 }
 
-                // Update the grid with new positions
                 drawGrid();
 
-            }, 1000); // Update every second
+            }, 1000);
         }
 
         function stopInterval() {
             if (interval) {
                 clearInterval(interval);
-                interval = null; // Reset interval to null
-                document.getElementById('startButton').disabled = false; // Enable start button
-                document.getElementById('restartButton').disabled = false; // Enable restart button
+                interval = null;
+                document.getElementById('startButton').disabled = false;
+                document.getElementById('restartButton').disabled = false;
             }
         }
 
         function restartPathfinding() {
-            stopInterval(); // Stop any active pathfinding
+            stopInterval(); 
             current_position = {x: 0, y: 0};
             path = [];
-            dynamicObstacles = [{x: 1, y: 5}, {x: 2, y: 6}]; // Reset dynamic obstacles
+            dynamicObstacles = [
+                {x: 1, y: 5}, {x: 2, y: 6}, 
+                {x: 5, y: 5}, {x: 6, y: 6}, 
+                {x: 4, y: 7}, {x: 3, y: 8}
+            ]; 
             drawGrid();
         }
 
@@ -219,102 +247,81 @@
                 }
             }
 
+            openSet.push(start);
             gScore[`${start.x},${start.y}`] = 0;
             fScore[`${start.x},${start.y}`] = heuristic(start, goal);
-            openSet.push(start);
 
             while (openSet.length > 0) {
-                // Sort openSet by fScore
-                openSet.sort((a, b) => fScore[`${a.x},${a.y}`] - fScore[`${b.x},${b.y}`]);
-                const current = openSet.shift();
+                const current = openSet.reduce((prev, curr) => fScore[`${curr.x},${curr.y}`] < fScore[`${prev.x},${prev.y}`] ? curr : prev);
 
-                // If we reached the goal
                 if (current.x === goal.x && current.y === goal.y) {
                     return reconstructPath(cameFrom, current);
                 }
 
+                openSet.splice(openSet.indexOf(current), 1);
                 closedSet.push(current);
 
-                // Get neighbors
-                const neighbors = getNeighbors(current, static_obstacles, dynamic_obstacles);
-
-                for (const neighbor of neighbors) {
-                    if (closedSet.some(n => n.x === neighbor.x && n.y === neighbor.y)) {
-                        continue; // Ignore the neighbor which is already evaluated.
+                for (const neighbor of getNeighbors(current)) {
+                    if (closedSet.some(closed => closed.x === neighbor.x && closed.y === neighbor.y) ||
+                        static_obstacles.some(obstacle => obstacle.x === neighbor.x && obstacle.y === neighbor.y) ||
+                        dynamic_obstacles.some(obstacle => obstacle.x === neighbor.x && obstacle.y === neighbor.y)) {
+                        continue;
                     }
 
                     const tentative_gScore = gScore[`${current.x},${current.y}`] + 1;
 
-                    if (!openSet.some(n => n.x === neighbor.x && n.y === neighbor.y)) {
-                        openSet.push(neighbor); // Discover a new node
+                    if (!openSet.some(open => open.x === neighbor.x && open.y === neighbor.y)) {
+                        openSet.push(neighbor);
                     } else if (tentative_gScore >= gScore[`${neighbor.x},${neighbor.y}`]) {
-                        continue; // This is not a better path
+                        continue;
                     }
 
-                    // This path is the best until now. Record it!
                     cameFrom[`${neighbor.x},${neighbor.y}`] = current;
                     gScore[`${neighbor.x},${neighbor.y}`] = tentative_gScore;
                     fScore[`${neighbor.x},${neighbor.y}`] = gScore[`${neighbor.x},${neighbor.y}`] + heuristic(neighbor, goal);
                 }
             }
 
-            return []; // No valid path found
-        }
-
-        function heuristic(a, b) {
-            // Manhattan distance
-            return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-        }
-
-        function getNeighbors(position, static_obstacles, dynamic_obstacles) {
-            const neighbors = [];
-
-            const directions = [
-                {x: -1, y: 0}, // Left
-                {x: 1, y: 0},  // Right
-                {x: 0, y: -1}, // Up
-                {x: 0, y: 1}   // Down
-            ];
-
-            for (const dir of directions) {
-                const neighbor = {x: position.x + dir.x, y: position.y + dir.y};
-
-                // Check if neighbor is within bounds and not an obstacle
-                if (
-                    neighbor.x >= 0 && neighbor.x < cols &&
-                    neighbor.y >= 0 && neighbor.y < rows &&
-                    !static_obstacles.some(ob => ob.x === neighbor.x && ob.y === neighbor.y) &&
-                    !dynamic_obstacles.some(ob => ob.x === neighbor.x && ob.y === neighbor.y)
-                ) {
-                    neighbors.push(neighbor);
-                }
-            }
-
-            return neighbors;
+            return null; // No path found
         }
 
         function reconstructPath(cameFrom, current) {
-            const total_path = [current];
-            while (`${current.x},${current.y}` in cameFrom) {
+            const totalPath = [current];
+            while (cameFrom[`${current.x},${current.y}`]) {
                 current = cameFrom[`${current.x},${current.y}`];
-                total_path.push(current);
+                totalPath.unshift(current);
             }
-            return total_path.reverse(); // Reverse the path to start from the beginning
+            return totalPath;
         }
 
-        // Event Listeners
+        function getNeighbors(node) {
+            const neighbors = [];
+            if (node.x > 0) neighbors.push({x: node.x - 1, y: node.y});
+            if (node.x < cols - 1) neighbors.push({x: node.x + 1, y: node.y});
+            if (node.y > 0) neighbors.push({x: node.x, y: node.y - 1});
+            if (node.y < rows - 1) neighbors.push({x: node.x, y: node.y + 1});
+            return neighbors;
+        }
+
+        function heuristic(a, b) {
+            return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); // Manhattan distance heuristic
+        }
+
         document.getElementById('startButton').addEventListener('click', function() {
             this.disabled = true;
             document.getElementById('restartButton').disabled = true;
             startPathfinding();
         });
 
-        document.getElementById('stopButton').addEventListener('click', stopInterval);
+        document.getElementById('stopButton').addEventListener('click', function() {
+            stopInterval();
+        });
 
-        document.getElementById('restartButton').addEventListener('click', restartPathfinding);
+        document.getElementById('restartButton').addEventListener('click', function() {
+            restartPathfinding();
+        });
 
-        // Initial Draw
-        drawGrid();
+        drawGrid(); // Initial draw
     </script>
 </body>
 </html>
