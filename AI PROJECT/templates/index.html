@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Path Finding Visualization with A*</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        #canvas {
+            border: 1px solid black;
+        }
+        #controls {
+            margin-top: 20px;
+        }
+        #controls button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Path Finding Visualization</h1>
+    <canvas id="canvas" width="500" height="500"></canvas> <!-- 500x500 for a 10x10 grid with 50px cells -->
+    <div id="controls">
+        <button id="startButton">Start Path Finding</button>
+        <button id="stopButton">Stop</button>
+        <button id="restartButton">Restart</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const gridSize = 50;  // Size of each cell in pixels
+        const rows = 10; // 10x10 grid
+        const cols = 10;
+
+        let staticObstacles = [
+            {x: 1, y: 0}, {x: 2, y: 0}, {x: 3, y: 0}, {x: 4, y: 0}, {x: 5, y: 0},
+            {x: 6, y: 0}, {x: 7, y: 0}, {x: 8, y: 0}, {x: 9, y: 0},
+            {x: 4, y: 1},
+            {x: 0, y: 2}, {x: 1, y: 2}, {x: 2, y: 2}, {x: 4, y: 2}, {x: 6, y: 2}, {x: 7, y: 2}, {x: 8, y: 2},
+            {x: 0, y: 3}, {x: 2, y: 3}, {x: 8, y: 3},
+            {x: 0, y: 4}, {x: 1, y: 4}, {x: 5, y: 4}, {x: 7, y: 4},
+            {x: 0, y: 5}, {x: 1, y: 5}, {x: 3, y: 5}, {x: 9, y: 5},
+            {x: 0, y: 6}, {x: 3, y: 6}, {x: 5, y: 6}, {x: 6, y: 6},
+            {x: 0, y: 7}, {x: 2, y: 7}, {x: 3, y: 7}, {x: 5, y: 7}, {x: 6, y: 7}, {x: 7, y: 7}, {x: 8, y: 7},
+            {x: 0, y: 8},
+            {x: 0, y: 9}, {x: 1, y: 9}, {x: 2, y: 9}, {x: 3, y: 9}, {x: 4, y: 9}, {x: 5, y: 9}, {x: 6, y: 9}, {x: 7, y: 9}
+        ];
+
+
+        let dynamicObstacles = [
+            {x: 5, y: 5}, {x: 2, y: 6}, {x: 3, y: 8}
+        ];
+
+        const start = {x: 0, y: 0};
+        const goal = {x: 9, y: 9}; // Goal remains at (9,9)
+        let path = [];
+        let current_position = {x: 0, y: 0};
+        let interval;
+        let obstacleMoveIntervals = {};
+
+        // Draw the grid
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const x = col * gridSize;
+                    const y = row * gridSize;
+
+                    ctx.strokeStyle = 'black';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x, y, gridSize, gridSize);
+
+                    // Color static obstacles
+                    if (staticObstacles.some(obstacle => obstacle.x === col && obstacle.y === row)) {
+                        ctx.fillStyle = 'gray';
+                        ctx.fillRect(x, y, gridSize, gridSize);
+                    }
+
+                    // Color dynamic obstacles
+                    else if (dynamicObstacles.some(obstacle => obstacle.x === col && obstacle.y === row)) {
+                        ctx.fillStyle = 'brown';
+                        ctx.fillRect(x, y, gridSize, gridSize);
+                    }
+
+                    // Color the start node
+                    else if (start.x === col && start.y === row) {
+                        ctx.fillStyle = 'green';
+                        ctx.fillRect(x, y, gridSize, gridSize);
+                    }
+
+                    // Color the goal node
+                    else if (goal.x === col && goal.y === row) {
+                        ctx.fillStyle = 'red';
+                        ctx.fillRect(x, y, gridSize, gridSize);
+                    }
+
+                    // Color the path
+                    else if (path.some(step => step.x === col && step.y === row)) {
+                        ctx.fillStyle = 'blue';
+                        ctx.fillRect(x, y, gridSize, gridSize);
+                    }
+
+                    // Color the current position of the robot
+                    else if (current_position.x === col && current_position.y === row) {
+                        ctx.fillStyle = 'yellow';
+                        ctx.fillRect(x, y, gridSize, gridSize);
+                    }
+                }
+            }
+        }
+
+        // Function to update dynamic obstacles
+        async function updateObstacles(static_obstacles, dynamic_obstacles, robotPosition) {
+            const newDynamicObstacles = [];
+
+            dynamic_obstacles.forEach(obstacle => {
+                let new_position;
+                let valid_position_found = false;
+
+                while (!valid_position_found) {
+                    const direction = Math.floor(Math.random() * 4);
+                    let delta = [0, 0];
+
+                    if (direction === 0) delta = [-1, 0];  // Move up
+                    if (direction === 1) delta = [1, 0];   // Move down
+                    if (direction === 2) delta = [0, -1];  // Move left
+                    if (direction === 3) delta = [0, 1];   // Move right
+
+                    new_position = {x: obstacle.x + delta[0], y: obstacle.y + delta[1]};
+
+                    if (
+                        new_position.x >= 0 && new_position.x < cols &&
+                        new_position.y >= 0 && new_position.y < rows &&
+                        !static_obstacles.some(ob => ob.x === new_position.x && ob.y === new_position.y) &&  
+                        !newDynamicObstacles.some(ob => ob.x === new_position.x && ob.y === new_position.y) &&
+                        (robotPosition.x !== new_position.x || robotPosition.y !== new_position.y) &&
+                        (new_position.x !== start.x || new_position.y !== start.y) &&  // Ensure dynamic obstacle avoids start
+                        (new_position.x !== goal.x || new_position.y !== goal.y)    // Ensure dynamic obstacle avoids goal
+                    ) {
+                        valid_position_found = true;
+                    }
+                }
+
+                newDynamicObstacles.push(new_position);
+            });
+
+            return newDynamicObstacles;
+        }
+
+        // Make dynamic obstacles wait for 3 seconds before changing their positions
+        function moveDynamicObstacles() {
+            dynamicObstacles.forEach((obstacle, index) => {
+                if (obstacleMoveIntervals[index]) {
+                    clearTimeout(obstacleMoveIntervals[index]); // Clear previous interval if any
+                }
+
+                obstacleMoveIntervals[index] = setTimeout(async () => {
+                    dynamicObstacles = await updateObstacles(staticObstacles, dynamicObstacles, current_position);
+                    drawGrid();
+                }, 800); // Wait for 3 seconds before moving
+            });
+        }
+
+        // Main function for dynamic pathfinding
+        function startPathfinding() {
+            stopInterval();  // Stop any previous interval if active
+
+            path = getPath(current_position, goal, staticObstacles, dynamicObstacles);
+
+            interval = setInterval(async function() {
+                if (current_position.x === goal.x && current_position.y === goal.y) {
+                    clearInterval(interval); 
+                    alert("Goal reached!");
+                    document.getElementById('startButton').disabled = false;
+                    document.getElementById('restartButton').disabled = false;
+                    return;
+                }
+
+                moveDynamicObstacles(); // Move obstacles with a delay
+
+                if (path.length > 0) {
+                    const next_step = path[0];
+
+                    if (dynamicObstacles.some(obstacle => obstacle.x === next_step.x && obstacle.y === next_step.y)) {
+                        path = await getPath(current_position, goal, staticObstacles, dynamicObstacles);
+
+                        if (!path || path.length === 0) {
+                            clearInterval(interval);
+                            alert("Path blocked, no valid path found!");
+                            document.getElementById('startButton').disabled = false;
+                            document.getElementById('restartButton').disabled = false;
+                            return;
+                        }
+                    } else {
+                        current_position = path.shift();
+                    }
+                }
+
+                drawGrid();
+
+            }, 1000);
+        }
+
+        function stopInterval() {
+            if (interval) {
+                clearInterval(interval);
+                interval = null;
+                document.getElementById('startButton').disabled = false;
+                document.getElementById('restartButton').disabled = false;
+            }
+        }
+
+        function restartPathfinding() {
+            stopInterval(); 
+            current_position = {x: 0, y: 0};
+            path = [];
+            dynamicObstacles = [
+                {x: 1, y: 5}, {x: 2, y: 6}, 
+                {x: 5, y: 5}, {x: 6, y: 6}, 
+                {x: 4, y: 7}, {x: 3, y: 8}
+            ]; 
+            drawGrid();
+        }
+
+        function getPath(start, goal, static_obstacles, dynamic_obstacles) {
+            const openSet = [];
+            const closedSet = [];
+            const cameFrom = {};
+            const gScore = {};
+            const fScore = {};
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    gScore[`${col},${row}`] = Infinity;
+                    fScore[`${col},${row}`] = Infinity;
+                }
+            }
+
+            openSet.push(start);
+            gScore[`${start.x},${start.y}`] = 0;
+            fScore[`${start.x},${start.y}`] = heuristic(start, goal);
+
+            while (openSet.length > 0) {
+                const current = openSet.reduce((prev, curr) => fScore[`${curr.x},${curr.y}`] < fScore[`${prev.x},${prev.y}`] ? curr : prev);
+
+                if (current.x === goal.x && current.y === goal.y) {
+                    return reconstructPath(cameFrom, current);
+                }
+
+                openSet.splice(openSet.indexOf(current), 1);
+                closedSet.push(current);
+
+                for (const neighbor of getNeighbors(current)) {
+                    if (closedSet.some(closed => closed.x === neighbor.x && closed.y === neighbor.y) ||
+                        static_obstacles.some(obstacle => obstacle.x === neighbor.x && obstacle.y === neighbor.y) ||
+                        dynamic_obstacles.some(obstacle => obstacle.x === neighbor.x && obstacle.y === neighbor.y)) {
+                        continue;
+                    }
+
+                    const tentative_gScore = gScore[`${current.x},${current.y}`] + 1;
+
+                    if (!openSet.some(open => open.x === neighbor.x && open.y === neighbor.y)) {
+                        openSet.push(neighbor);
+                    } else if (tentative_gScore >= gScore[`${neighbor.x},${neighbor.y}`]) {
+                        continue;
+                    }
+
+                    cameFrom[`${neighbor.x},${neighbor.y}`] = current;
+                    gScore[`${neighbor.x},${neighbor.y}`] = tentative_gScore;
+                    fScore[`${neighbor.x},${neighbor.y}`] = gScore[`${neighbor.x},${neighbor.y}`] + heuristic(neighbor, goal);
+                }
+            }
+
+            return null; // No path found
+        }
+
+        function reconstructPath(cameFrom, current) {
+            const totalPath = [current];
+            while (cameFrom[`${current.x},${current.y}`]) {
+                current = cameFrom[`${current.x},${current.y}`];
+                totalPath.unshift(current);
+            }
+            return totalPath;
+        }
+
+        function getNeighbors(node) {
+            const neighbors = [];
+            if (node.x > 0) neighbors.push({x: node.x - 1, y: node.y});
+            if (node.x < cols - 1) neighbors.push({x: node.x + 1, y: node.y});
+            if (node.y > 0) neighbors.push({x: node.x, y: node.y - 1});
+            if (node.y < rows - 1) neighbors.push({x: node.x, y: node.y + 1});
+            return neighbors;
+        }
+
+        function heuristic(a, b) {
+            return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); // Manhattan distance heuristic
+        }
+
+        document.getElementById('startButton').addEventListener('click', function() {
+            this.disabled = true;
+            document.getElementById('restartButton').disabled = true;
+            startPathfinding();
+        });
+
+        document.getElementById('stopButton').addEventListener('click', function() {
+            stopInterval();
+        });
+
+        document.getElementById('restartButton').addEventListener('click', function() {
+            restartPathfinding();
+        });
+
+        drawGrid(); // Initial draw
+    </script>
+</body>
+</html>
