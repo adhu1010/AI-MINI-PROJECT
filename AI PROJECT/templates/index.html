@@ -175,26 +175,33 @@
         // Main function for dynamic pathfinding
         function startPathfinding() {
             stopInterval();  // Stop any previous interval if active
-
-            path = getPath(current_position, goal, staticObstacles, dynamicObstacles);
-
+        
+            path = getPath(current_position, goal, staticObstacles, dynamicObstacles); // Get the initial path
+        
             interval = setInterval(async function() {
                 if (current_position.x === goal.x && current_position.y === goal.y) {
-                    clearInterval(interval); 
+                    clearInterval(interval); // Stop when the robot reaches the goal
                     alert("Goal reached!");
                     document.getElementById('startButton').disabled = false;
                     document.getElementById('restartButton').disabled = false;
                     return;
                 }
-
-                moveDynamicObstacles(); // Move obstacles with a delay
-
+        
+                // Move dynamic obstacles, ensuring no overlap
+                dynamicObstacles = await updateObstacles(staticObstacles, dynamicObstacles, current_position);
+        
+                // Check if the next step in the path is blocked by a dynamic obstacle
                 if (path.length > 0) {
-                    const next_step = path[0];
-
+                    const next_step = path[0]; // Next step in the current path
+        
                     if (dynamicObstacles.some(obstacle => obstacle.x === next_step.x && obstacle.y === next_step.y)) {
-                        path = await getPath(current_position, goal, staticObstacles, dynamicObstacles);
-
+                        // If blocked, wait for 800ms, then move obstacles and re-plan the path
+                        clearInterval(interval);
+                        await new Promise(resolve => setTimeout(resolve, 800)); // Wait for 800 milliseconds
+                        dynamicObstacles = await updateObstacles(staticObstacles, dynamicObstacles, current_position); // Move dynamic obstacles
+                        path = await getPath(current_position, goal, staticObstacles, dynamicObstacles); // Re-calculate the path
+        
+                        // If no valid path, stop
                         if (!path || path.length === 0) {
                             clearInterval(interval);
                             alert("Path blocked, no valid path found!");
@@ -203,14 +210,17 @@
                             return;
                         }
                     } else {
+                        // If not blocked, move the robot to the next step
                         current_position = path.shift();
                     }
                 }
-
+        
+                // Update the grid with new positions
                 drawGrid();
-
-            }, 1000);
+        
+            }, 800); // Update every second
         }
+        
 
         function stopInterval() {
             if (interval) {
@@ -225,11 +235,24 @@
             stopInterval(); 
             current_position = {x: 0, y: 0};
             path = [];
+            staticObstacles = [
+            {x: 1, y: 0}, {x: 2, y: 0}, {x: 3, y: 0}, {x: 4, y: 0}, {x: 5, y: 0},
+            {x: 6, y: 0}, {x: 7, y: 0}, {x: 8, y: 0}, {x: 9, y: 0},
+            {x: 4, y: 1},
+            {x: 0, y: 2}, {x: 1, y: 2}, {x: 2, y: 2}, {x: 4, y: 2}, {x: 6, y: 2}, {x: 7, y: 2}, {x: 8, y: 2},
+            {x: 0, y: 3}, {x: 2, y: 3}, {x: 8, y: 3},
+            {x: 0, y: 4}, {x: 1, y: 4}, {x: 5, y: 4}, {x: 7, y: 4},
+            {x: 0, y: 5}, {x: 1, y: 5}, {x: 3, y: 5}, {x: 9, y: 5},
+            {x: 0, y: 6}, {x: 3, y: 6}, {x: 5, y: 6}, {x: 6, y: 6},
+            {x: 0, y: 7}, {x: 2, y: 7}, {x: 3, y: 7}, {x: 5, y: 7}, {x: 6, y: 7}, {x: 7, y: 7}, {x: 8, y: 7},
+            {x: 0, y: 8},
+            {x: 0, y: 9}, {x: 1, y: 9}, {x: 2, y: 9}, {x: 3, y: 9}, {x: 4, y: 9}, {x: 5, y: 9}, {x: 6, y: 9}, {x: 7, y: 9}
+            ];
+
+
             dynamicObstacles = [
-                {x: 1, y: 5}, {x: 2, y: 6}, 
-                {x: 5, y: 5}, {x: 6, y: 6}, 
-                {x: 4, y: 7}, {x: 3, y: 8}
-            ]; 
+            {x: 5, y: 5}, {x: 2, y: 6}, {x: 3, y: 8}
+            ];
             drawGrid();
         }
 

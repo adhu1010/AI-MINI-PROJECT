@@ -1,7 +1,6 @@
 import heapq
 import random
 import time
-
 import numpy as np
 from flask import Flask, jsonify, render_template, request
 
